@@ -20,7 +20,9 @@
 #endif
 #include "optimizer/cost.h"
 #include "utils/builtins.h"
+#include "utils/hsearch.h"		/* HASHCTL, hash_create/search/seq_* */
 #include "utils/inval.h"
+#include "utils/tuplestore.h"		/* tuplestore_putvalues */
 #include "utils/syscache.h"
 
 

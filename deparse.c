@@ -18,6 +18,9 @@
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_type.h"			/* INT2OID, FLOAT4OID, UUIDOID, etc. */
+#include "access/htup_details.h"		/* GETSTRUCT */
+#include "access/transam.h"			/* FirstGenbkiObjectId */
 #if PG_VERSION_NUM >= 160000
 	#include "catalog/pg_ts_config.h"
 #endif
@@ -406,6 +409,16 @@ sqlite_is_foreign_pathkey(PlannerInfo *root,
 		Oid			oprid;
 		TypeCacheEntry *typentry;
 
+#if PG_VERSION_NUM >= 180000
+		oprid = get_opfamily_member_for_cmptype(pathkey->pk_opfamily,
+												em->em_datatype,
+												em->em_datatype,
+												pathkey->pk_cmptype);
+		if (!OidIsValid(oprid))
+			elog(ERROR, "missing operator %d(%u,%u) in opfamily %u",
+				 (int) pathkey->pk_cmptype, em->em_datatype, em->em_datatype,
+				 pathkey->pk_opfamily);
+#else
 		oprid = get_opfamily_member(pathkey->pk_opfamily,
 									em->em_datatype,
 									em->em_datatype,
@@ -414,6 +427,7 @@ sqlite_is_foreign_pathkey(PlannerInfo *root,
 			elog(ERROR, "missing operator %d(%u,%u) in opfamily %u",
 				 pathkey->pk_strategy, em->em_datatype, em->em_datatype,
 				 pathkey->pk_opfamily);
+#endif
 
 		/* See whether operator is default < or > for sort expr's datatype. */
 		typentry = lookup_type_cache(exprType((Node *) em->em_expr),
@@ -1960,7 +1974,6 @@ sqlite_deparse_insert(StringInfo buf, PlannerInfo *root,
 	TupleDesc	tupdesc = RelationGetDescr(rel);
 	bool		all_columns_generated = true;
 #endif
-	AttrNumber	pindex;
 	bool		first;
 	ListCell   *lc;
 
@@ -2020,7 +2033,6 @@ sqlite_deparse_insert(StringInfo buf, PlannerInfo *root,
 
 		appendStringInfoString(buf, ") VALUES (");
 
-		pindex = 1;
 		first = true;
 		foreach(lc, targetAttrs)
 		{
@@ -2035,7 +2047,6 @@ sqlite_deparse_insert(StringInfo buf, PlannerInfo *root,
 					appendStringInfoString(buf, ", ");
 				first = false;
 				appendStringInfo(buf, "?");
-				pindex++;
 #if PG_VERSION_NUM >= 140000
 			}
 #endif
@@ -2649,7 +2660,6 @@ sqlite_deparse_update(StringInfo buf, PlannerInfo *root,
 #if PG_VERSION_NUM >= 140000
 	TupleDesc	tupdesc = RelationGetDescr(rel);
 #endif
-	AttrNumber	pindex;
 	bool		first;
 	ListCell   *lc;
 	int			i;
@@ -2658,7 +2668,6 @@ sqlite_deparse_update(StringInfo buf, PlannerInfo *root,
 	sqlite_deparse_relation(buf, rel);
 	appendStringInfoString(buf, " SET ");
 
-	pindex = 2;
 	first = true;
 	foreach(lc, targetAttrs)
 	{
@@ -2674,7 +2683,6 @@ sqlite_deparse_update(StringInfo buf, PlannerInfo *root,
 			first = false;
 			sqlite_deparse_column_ref(buf, rtindex, attnum, root, false, true);
 			appendStringInfo(buf, " = ?");
-			pindex++;
 #if PG_VERSION_NUM >= 140000
 		}
 #endif
@@ -4163,6 +4171,16 @@ sqlite_append_order_by_clause(List *pathkeys, bool has_final_sort, deparse_expr_
 		 * The datatype used by the opfamily is not necessarily the same as
 		 * the expression type (for array types for example).
 		 */
+#if PG_VERSION_NUM >= 180000
+		oprid = get_opfamily_member_for_cmptype(pathkey->pk_opfamily,
+												em->em_datatype,
+												em->em_datatype,
+												pathkey->pk_cmptype);
+		if (!OidIsValid(oprid))
+			elog(ERROR, "missing operator %d(%u,%u) in opfamily %u",
+				 (int) pathkey->pk_cmptype, em->em_datatype, em->em_datatype,
+				 pathkey->pk_opfamily);
+#else
 		oprid = get_opfamily_member(pathkey->pk_opfamily,
 									em->em_datatype,
 									em->em_datatype,
@@ -4171,6 +4189,7 @@ sqlite_append_order_by_clause(List *pathkeys, bool has_final_sort, deparse_expr_
 			elog(ERROR, "missing operator %d(%u,%u) in opfamily %u",
 				 pathkey->pk_strategy, em->em_datatype, em->em_datatype,
 				 pathkey->pk_opfamily);
+#endif
 
 		sqlite_deparse_expr(em_expr, context);
 		/*
@@ -4193,10 +4212,17 @@ sqlite_append_order_by_clause(List *pathkeys, bool has_final_sort, deparse_expr_
 			 * warning message because NULLS FIRST/LAST is not implemented in
 			 * this SQLite version.
 			 */
+#if PG_VERSION_NUM >= 180000
+			if (!pathkey->pk_nulls_first && pathkey->pk_cmptype == COMPARE_LT)
+				elog(WARNING, "Current Sqlite Version (%d) does not support NULLS LAST for ORDER BY ASC, degraded emitted query to ORDER BY ASC NULLS FIRST (default sqlite behaviour).", sqliteVersion);
+			else if (pathkey->pk_nulls_first && pathkey->pk_cmptype != COMPARE_LT)
+				elog(WARNING, "Current Sqlite Version (%d) does not support NULLS FIRST for ORDER BY DESC, degraded emitted query to ORDER BY DESC NULLS LAST (default sqlite behaviour).", sqliteVersion);
+#else
 			if (!pathkey->pk_nulls_first && pathkey->pk_strategy == BTLessStrategyNumber)
 				elog(WARNING, "Current Sqlite Version (%d) does not support NULLS LAST for ORDER BY ASC, degraded emitted query to ORDER BY ASC NULLS FIRST (default sqlite behaviour).", sqliteVersion);
 			else if (pathkey->pk_nulls_first && pathkey->pk_strategy != BTLessStrategyNumber)
 				elog(WARNING, "Current Sqlite Version (%d) does not support NULLS FIRST for ORDER BY DESC, degraded emitted query to ORDER BY DESC NULLS LAST (default sqlite behaviour).", sqliteVersion);
+#endif
 		}
 	}
 	sqlite_reset_transmission_modes(nestlevel);

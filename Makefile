@@ -65,8 +65,8 @@ include $(PGXS)
 ifndef MAJORVERSION
 MAJORVERSION := $(basename $(VERSION))
 endif
-ifeq (,$(findstring $(MAJORVERSION), 13 14 15 16 17))
-$(error PostgreSQL 13, 14, 15, 16 or 17 is required to compile this extension)
+ifeq (,$(findstring $(MAJORVERSION), 13 14 15 16 17 18 19))
+$(error PostgreSQL 13, 14, 15, 16, 17, 18 or 19 is required to compile this extension)
 endif
 else
 subdir = contrib/sqlite_fdw

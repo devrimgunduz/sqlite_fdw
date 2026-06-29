@@ -138,8 +138,8 @@ sqlite_convert_to_pg(Form_pg_attribute att, sqlite3_value * val, AttInMetadata *
 					case SQLITE3_TEXT: /* treated as UTF-8 text BLOB */
 					{
 						value_datum = (Datum) palloc0(value_byte_size_blob_or_utf8 + VARHDRSZ);
-						memcpy(VARDATA(value_datum), sqlite3_value_blob(val), value_byte_size_blob_or_utf8);
-						SET_VARSIZE(value_datum, value_byte_size_blob_or_utf8 + VARHDRSZ);
+						memcpy(VARDATA(DatumGetPointer(value_datum)), sqlite3_value_blob(val), value_byte_size_blob_or_utf8);
+						SET_VARSIZE(DatumGetPointer(value_datum), value_byte_size_blob_or_utf8 + VARHDRSZ);
 						return (struct NullableDatum) {PointerGetDatum((const void *)value_datum), false};
 					}
 				}
